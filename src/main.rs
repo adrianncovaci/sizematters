@@ -1,11 +1,11 @@
 use std::{
-    convert::Infallible,
+    collections::BTreeMap,
     env,
     error::Error,
     fmt,
-    fs::File,
+    fs::{self, DirEntry},
     io,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use clap::Parser;
@@ -22,7 +22,7 @@ struct Args {
 
 #[derive(Debug)]
 struct Sizer {
-    files: Vec<File>,
+    files: Vec<DirEntry>,
     dir: PathBuf,
 }
 
@@ -57,14 +57,38 @@ impl Sizer {
 
         Ok(Self { files, dir })
     }
+
+    fn get_largest_n_files(&mut self) -> Result<(), SizerError> {
+        let mut files = BTreeMap::new();
+        Sizer::_get_largest_n_files_rec(self.dir.clone(), &mut files)?;
+        for (path, size) in &files {
+            println!("{:?} - {:?}", path, size);
+        }
+        Ok(())
+    }
+
+    fn _get_largest_n_files_rec(
+        path: PathBuf,
+        files: &mut BTreeMap<u64, PathBuf>,
+    ) -> Result<(), SizerError> {
+        for curr_file in fs::read_dir(path)? {
+            let curr_file = curr_file?;
+            let path = curr_file.path();
+            let metadata = fs::metadata(&path)?;
+            if metadata.is_file() {
+                files.insert(metadata.len(), curr_file.path());
+            } else {
+                Sizer::_get_largest_n_files_rec(curr_file.path(), files)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn main() -> Result<(), SizerError> {
     let args = Args::parse();
 
-    let sizer = Sizer::parse_sizer(args)?;
-
-    println!("{:?}", sizer);
-
+    let mut sizer = Sizer::parse_sizer(args)?;
+    sizer.get_largest_n_files()?;
     Ok(())
 }
