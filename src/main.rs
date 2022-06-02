@@ -22,7 +22,7 @@ struct Args {
 
 #[derive(Debug)]
 struct Sizer {
-    files: Vec<DirEntry>,
+    files: Vec<PathBuf>,
     dir: PathBuf,
 }
 
@@ -61,22 +61,28 @@ impl Sizer {
     fn get_largest_n_files(&mut self) -> Result<(), SizerError> {
         let mut files = BTreeMap::new();
         Sizer::_get_largest_n_files_rec(self.dir.clone(), &mut files)?;
-        for (path, size) in &files {
-            println!("{:?} - {:?}", path, size);
-        }
+        let _ = files
+            .iter()
+            .rev()
+            .take(self.files.capacity())
+            .map(|el| {
+                self.files.push(el.1.path());
+                *el.0
+            })
+            .collect::<Vec<u64>>();
         Ok(())
     }
 
     fn _get_largest_n_files_rec(
         path: PathBuf,
-        files: &mut BTreeMap<u64, PathBuf>,
+        files: &mut BTreeMap<u64, DirEntry>,
     ) -> Result<(), SizerError> {
         for curr_file in fs::read_dir(path)? {
             let curr_file = curr_file?;
             let path = curr_file.path();
             let metadata = fs::metadata(&path)?;
             if metadata.is_file() {
-                files.insert(metadata.len(), curr_file.path());
+                files.insert(metadata.len(), curr_file);
             } else {
                 Sizer::_get_largest_n_files_rec(curr_file.path(), files)?;
             }
@@ -90,5 +96,7 @@ fn main() -> Result<(), SizerError> {
 
     let mut sizer = Sizer::parse_sizer(args)?;
     sizer.get_largest_n_files()?;
+
+    println!("{:?}", sizer.files.len());
     Ok(())
 }
