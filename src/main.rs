@@ -2,8 +2,8 @@ use std::{
     env,
     error::Error,
     fmt,
-    fs::{self, DirEntry},
-    io,
+    fs::{self, DirEntry, File, OpenOptions},
+    io::{self, Seek, SeekFrom, Write},
     path::PathBuf,
 };
 
@@ -23,6 +23,7 @@ struct Args {
 struct Sizer {
     files: Vec<(DirEntry, u64)>,
     dir: PathBuf,
+    file: File,
 }
 
 #[derive(Debug)]
@@ -54,7 +55,13 @@ impl Sizer {
             rest => dir = PathBuf::from(rest),
         }
 
-        Ok(Self { files, dir })
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open("/tmp/sizer.log")?;
+
+        Ok(Self { files, dir, file })
     }
 
     fn get_largest_n_files(&mut self) -> Result<(), SizerError> {
@@ -80,6 +87,18 @@ impl Sizer {
                 Sizer::_get_largest_n_files_rec(curr_file.path(), files)?;
             }
         }
+        Ok(())
+    }
+
+    fn write_list_to_log_file(&mut self) -> Result<(), SizerError> {
+        self.file.seek(SeekFrom::Start(0))?;
+        let content = self
+            .files
+            .iter()
+            .map(|el| format!("{:?} - {:?}", el.0.path(), el.1))
+            .collect::<Vec<String>>()
+            .join("\n");
+        self.file.write(&content.as_bytes())?;
         Ok(())
     }
 }
