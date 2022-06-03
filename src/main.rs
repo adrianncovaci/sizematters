@@ -19,6 +19,8 @@ struct Args {
     dir: String,
     #[clap(short, long)]
     list: bool,
+    #[clap(short, long)]
+    index_delete: Option<u8>,
 }
 
 #[derive(Debug)]
@@ -116,6 +118,16 @@ impl Sizer {
         println!("{}", result);
         Ok(())
     }
+
+    fn delete_log_file(&self, index: u8) -> Result<(), SizerError> {
+        if index == 0 || index > self.files.capacity() as u8 {
+            return Ok(());
+        }
+
+        fs::remove_file(self.files[index as usize].0.path())?;
+
+        Ok(())
+    }
 }
 
 fn main() -> Result<(), SizerError> {
@@ -125,6 +137,10 @@ fn main() -> Result<(), SizerError> {
     if args.list {
         sizer.print_log_file()?;
         return Ok(());
+    }
+
+    if let Some(index) = args.index_delete {
+        sizer.delete_log_file(index)?;
     }
 
     sizer.get_largest_n_files()?;
