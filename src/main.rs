@@ -3,7 +3,7 @@ use std::{
     error::Error,
     fmt,
     fs::{self, DirEntry, File, OpenOptions},
-    io::{self, Seek, SeekFrom, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::PathBuf,
 };
 
@@ -17,6 +17,8 @@ struct Args {
     file_number: u8,
     #[clap(short, long, default_value = "curr")]
     dir: String,
+    #[clap(short, long)]
+    list: bool,
 }
 
 #[derive(Debug)]
@@ -46,7 +48,7 @@ impl From<io::Error> for SizerError {
 impl Error for SizerError {}
 
 impl Sizer {
-    fn parse_sizer(args: Args) -> Result<Self, SizerError> {
+    fn parse_sizer(args: &Args) -> Result<Self, SizerError> {
         let files = Vec::with_capacity(args.file_number as usize);
         let dir;
 
@@ -70,6 +72,10 @@ impl Sizer {
         files.sort_by(|a, b| b.1.cmp(&a.1));
         files.truncate(self.files.capacity());
         self.files = files;
+        self.write_list_to_log_file()?;
+        for file in &self.files {
+            println!("{:?} - {:?}", file.0.path(), file.1);
+        }
         Ok(())
     }
 
@@ -99,18 +105,29 @@ impl Sizer {
             .collect::<Vec<String>>()
             .join("\n");
         self.file.write(&content.as_bytes())?;
+        self.file.flush()?;
+        Ok(())
+    }
+
+    fn print_log_file(&mut self) -> Result<(), SizerError> {
+        self.file.seek(SeekFrom::Start(0))?;
+        let mut result = String::new();
+        self.file.read_to_string(&mut result)?;
+        println!("{}", result);
         Ok(())
     }
 }
 
 fn main() -> Result<(), SizerError> {
     let args = Args::parse();
+    let mut sizer = Sizer::parse_sizer(&args)?;
 
-    let mut sizer = Sizer::parse_sizer(args)?;
+    if args.list {
+        sizer.print_log_file()?;
+        return Ok(());
+    }
+
     sizer.get_largest_n_files()?;
 
-    for file in sizer.files {
-        println!("{:?} - {:?}", file.0.path(), file.1);
-    }
     Ok(())
 }
