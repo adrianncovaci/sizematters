@@ -121,11 +121,12 @@ impl Sizer {
         self.file.seek(SeekFrom::Start(0))?;
         let mut result = String::new();
         self.file.read_to_string(&mut result)?;
+        println!("{}", result);
         Ok(())
     }
 
     fn delete_log_file(&self, index: u8) -> Result<(), SizerError> {
-        if index == 0 || index > self.files.capacity() as u8 {
+        if index > self.files.capacity() as u8 {
             return Ok(());
         }
 
