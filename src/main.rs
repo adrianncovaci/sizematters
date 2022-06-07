@@ -2,9 +2,10 @@ use std::{
     env,
     error::Error,
     fmt,
-    fs::{self, DirEntry, File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    path::PathBuf,
+    num,
+    path::{Path, PathBuf},
 };
 
 use clap::Parser;
@@ -25,7 +26,7 @@ struct Args {
 
 #[derive(Debug)]
 struct Sizer {
-    files: Vec<(DirEntry, u64)>,
+    files: Vec<(PathBuf, u64)>,
     dir: PathBuf,
     file: File,
 }
@@ -33,6 +34,7 @@ struct Sizer {
 #[derive(Debug)]
 enum SizerError {
     InvalidPath,
+    InvalidSize,
 }
 
 impl fmt::Display for SizerError {
@@ -47,17 +49,21 @@ impl From<io::Error> for SizerError {
     }
 }
 
+impl From<num::ParseIntError> for SizerError {
+    fn from(_: num::ParseIntError) -> Self {
+        SizerError::InvalidSize
+    }
+}
+
 impl Error for SizerError {}
 
 impl Sizer {
     fn parse_sizer(args: &Args) -> Result<Self, SizerError> {
         let files = Vec::with_capacity(args.file_number as usize);
-        let dir;
-
-        match args.dir.as_str() {
-            "curr" => dir = env::current_dir()?,
-            rest => dir = PathBuf::from(rest),
-        }
+        let dir = match args.dir.as_str() {
+            "curr" => env::current_dir()?,
+            rest => PathBuf::from(rest),
+        };
 
         let file = OpenOptions::new()
             .read(true)
@@ -76,21 +82,21 @@ impl Sizer {
         self.files = files;
         self.write_list_to_log_file()?;
         for file in &self.files {
-            println!("{:?} - {:?}", file.0.path(), file.1);
+            println!("{:?} - {:?}", file.0, file.1);
         }
         Ok(())
     }
 
     fn _get_largest_n_files_rec(
         path: PathBuf,
-        files: &mut Vec<(DirEntry, u64)>,
+        files: &mut Vec<(PathBuf, u64)>,
     ) -> Result<(), SizerError> {
         for curr_file in fs::read_dir(path)? {
             let curr_file = curr_file?;
             let path = curr_file.path();
             let metadata = fs::metadata(&path)?;
             if metadata.is_file() {
-                files.push((curr_file, metadata.len()));
+                files.push((curr_file.path(), metadata.len()));
             } else if metadata.is_dir() {
                 Sizer::_get_largest_n_files_rec(curr_file.path(), files)?;
             }
@@ -99,14 +105,14 @@ impl Sizer {
     }
 
     fn write_list_to_log_file(&mut self) -> Result<(), SizerError> {
+        self.file.set_len(0)?;
         self.file.seek(SeekFrom::Start(0))?;
-        let content = self
-            .files
-            .iter()
-            .map(|el| format!("{:?} - {:?}", el.0.path(), el.1))
-            .collect::<Vec<String>>()
-            .join("\n");
-        self.file.write(&content.as_bytes())?;
+        let mut content = String::new();
+        for file in self.files.iter() {
+            let (path, size) = (fs::canonicalize(file.0.clone())?, file.1);
+            content.push_str(&format!("{:?} - {:?}\n", path, size));
+        }
+        self.file.write_all(content.as_bytes())?;
         self.file.flush()?;
         Ok(())
     }
@@ -115,7 +121,6 @@ impl Sizer {
         self.file.seek(SeekFrom::Start(0))?;
         let mut result = String::new();
         self.file.read_to_string(&mut result)?;
-        println!("{}", result);
         Ok(())
     }
 
@@ -124,7 +129,25 @@ impl Sizer {
             return Ok(());
         }
 
-        fs::remove_file(self.files[index as usize].0.path())?;
+        fs::remove_file(self.files[index as usize].0.clone())?;
+
+        Ok(())
+    }
+
+    fn load_files_from_log_file(&mut self) -> Result<(), SizerError> {
+        let mut result = String::new();
+        self.file.read_to_string(&mut result)?;
+        let mut files = vec![];
+        result.truncate(result.len() - 1);
+
+        for line in result.split('\n') {
+            let data_el = line.split(" - ").collect::<Vec<&str>>();
+            let size = data_el[1].parse::<u64>()?;
+            let path = Path::new(&data_el[0].replace('\"', "")).to_path_buf();
+            files.push((path, size));
+        }
+
+        self.files = files;
 
         Ok(())
     }
@@ -133,6 +156,7 @@ impl Sizer {
 fn main() -> Result<(), SizerError> {
     let args = Args::parse();
     let mut sizer = Sizer::parse_sizer(&args)?;
+    sizer.load_files_from_log_file()?;
 
     if args.list {
         sizer.print_log_file()?;
@@ -141,6 +165,7 @@ fn main() -> Result<(), SizerError> {
 
     if let Some(index) = args.index_delete {
         sizer.delete_log_file(index)?;
+        return Ok(());
     }
 
     sizer.get_largest_n_files()?;
