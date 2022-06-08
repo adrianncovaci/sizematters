@@ -125,12 +125,23 @@ impl Sizer {
         Ok(())
     }
 
-    fn delete_log_file(&self, index: u8) -> Result<(), SizerError> {
+    fn delete_from_log_file(&self, index: u8) -> Result<(), SizerError> {
         if index > self.files.capacity() as u8 {
             return Ok(());
         }
+        println!(
+            "You're about to delete {:?}. Are you sure you want to proceed? (y/n)",
+            self.files[index as usize].0.clone()
+        );
+        let mut answer_result = String::new();
 
-        fs::remove_file(self.files[index as usize].0.clone())?;
+        std::io::stdin().read_line(&mut answer_result)?;
+        match answer_result.trim().to_lowercase().as_str() {
+            "y" | "yes" =>
+            fs::remove_file(self.files[index as usize].0.clone())?,
+            "n" | "no" => {}
+            _ => println!("invalid response"),
+        }
 
         Ok(())
     }
@@ -165,7 +176,7 @@ fn main() -> Result<(), SizerError> {
     }
 
     if let Some(index) = args.index_delete {
-        sizer.delete_log_file(index)?;
+        sizer.delete_from_log_file(index)?;
         return Ok(());
     }
 
